@@ -1,0 +1,320 @@
+---
+title: "MA678 homework 06"
+subtitle: "Multinomial Regression"
+author: "Anna Cook"
+date: "October 22, 2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="pdf",fig.align  = 'center')
+pacman::p_load(
+  "ggplot2",
+  "knitr",
+  "arm",
+  "data.table",
+  "foreign",
+  "car",
+  "faraway",
+  "nnet",
+  "reshape2",
+  "VGAM",
+  "rstanarm",
+  "dplyr"
+)
+```
+
+## Multinomial logit: 
+Using the individual-level survey data from the 2000 National Election Study (data in folder NES), predict party identification (which is on a five-point scale) using ideology and demographics with an ordered multinomial logit model.
+```{r, echo=FALSE}
+nes <- read.csv("https://raw.githubusercontent.com/avehtari/ROS-Examples/master/NES/data/nes.txt", header = TRUE, sep = "")
+fit <- polr(factor(partyid7) ~ age + gender + race + ideo, data = nes, Hess = TRUE)
+fit
+
+## I'm not sure which variable for party id to use, it doesn't look like any of them are on a 5 point scale
+```
+1. Summarize the parameter estimates numerically and also graphically. 
+
+```{r}
+summary(fit)
+```
+
+2. Explain the results from the fitted model.
+```{r}
+#a person is more likely to be higher in partyid if they are younger, have a lower indicator value for gender, have a lower indicator value for race, and a higher indicator value for ideo. (although I'm not sure where to find out what each of the values represent for each variable.)
+```
+
+3. Use a binned residual plot to assess the fit of the model.
+```{r}
+
+```
+
+
+
+## (Optional) Choice models: 
+
+Using the individual-level survey data from the election example described in Section 10.9 (data available in the folder NES), 
+
+```{r, echo=FALSE}
+
+```
+
+
+1. fit a logistic regression model for the choice of supporting Democrats or Republicans. Then interpret the output from this regression in terms of a utility/choice model.
+
+```{r}
+
+```
+
+2. Repeat the previous exercise but now with three options: Democrat, no opinion, Republican. That is, fit an ordered logit model and then express it as a utility/choice mode
+
+```{r}
+
+```
+
+
+## Contingency table and ordered logit model
+
+In a prospective study of a new living attenuated recombinant vaccine for influenza, patients were randomly allocated to two groups, one of which was given the new vaccine and the other a saline placebo. The responses were titre levels of hemagglutinin inhibiting antibody found in the blood six weeks after vaccination; they were categorized as "small", "medium" or "large". 
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrr}
+  \hline
+treatment & small & moderate & large & Total \\ 
+  \hline
+placebo &  25 &   8 &   5 & 38 \\ 
+ vaccine &   6 &  18 &  11 & 35 \\ 
+   \hline
+\end{tabular}
+\end{table}
+The cell frequencies in the rows of table are constrained to add to the number of subjects in each treatment group (35 and 38 respectively). We want to know if the pattern of responses is the same for each treatment group.
+
+```{r,echo=FALSE}
+antibody <- matrix(c(25,8,5,6,18,11), ncol = 3, byrow = TRUE)
+colnames(antibody) <- c("small", "moderate","large")
+rownames(antibody) <- c("placebo","vaccine")
+data <- as.table(antibody)
+df <- as.data.frame(data)
+df$treatment <- df$Var1
+df$levels <- df$Var2
+```
+
+1. Using a chisqure test and an appropriate log-linear model, test the hypothesis that the distribution of responses is the same for the placebo and vaccine groups.
+```{r}
+chisq.test(data)
+
+stan_glm(Freq ~ treatment + levels, data = df, refresh = 0)
+```
+
+2. For the model corresponding to the hypothesis of homogeniety of response distributions, calculate the fitted values, the Pearson and deviance residuals, and the goodness of fit statistics $X^2$ and $D$. Which of the cells of the table contribute most to $X^2$ and $D$? Explain and interpret these results.
+
+```{r}
+chisq <- chisq.test(data) 
+chisq
+```
+
+
+3. Re-analyze these data using ordered logit model (use `polr`) to estiamte the cut-points of a latent continuous response varaible and to estimate a location shift between the two treatment groups.  Sketch a rough diagram to illustrate the model which forms the conceptual base for this analysis.
+```{r}
+
+```
+
+
+# High School and Beyond 
+The hsb data was collected as a subset of the High School and Beyond study conducted by the National Education Longitudinal Studies program of the National Center for Education Statistics. The variables are gender; race; socioeconomic status; school type; chosen high school program type; scores on reading, writing, math, science, and social studies. We want to determine which factors are related to the choice of the type of program—academic, vocational, or general—that the students pursue in high school. The response is multinomial with three levels.
+
+```{r}
+data(hsb)
+?hsb
+```
+
+1. Fit a trinomial response model with the other relevant variables as predictors (untransformed).
+```{r}
+fit <- multinom(factor(prog)~gender + race + ses + read + write + math + science + socst + schtyp, data = hsb, hess=TRUE)
+fit
+```
+
+2. For the student with id 99, compute the predicted probabilities of the three possible choices.
+
+```{r}
+subset <- subset(hsb, hsb$id==99)
+fitted(fit)[102,]
+```
+
+
+# Happiness
+Data were collected from 39 students in a University of Chicago MBA class and may be found in the dataset `happy`.
+```{r}
+library(faraway)
+data(happy)
+?happy
+
+```
+
+1. Build a model for the level of happiness as a function of the other variables.
+```{r}
+fit <- polr(factor(happy)~money + sex + love + work, data = happy, Hess = TRUE)
+fit
+```
+
+2. Interpret the parameters of your chosen model.
+```{r}
+# a person is most likely to be happier if they have more money, more love, a good job, and not satisfactory sexual activity (hmm that part doesn't make sense)
+
+```
+
+3. Predict the happiness distribution for subject whose parents earn $30,000 a year,
+who is lonely, not sexually active and has no job.
+```{r}
+newdata = data.frame(money=30, sex=0,love=1,work=1)
+predict(fit, newdata=newdata, type = "probs")
+```
+
+# newspaper survey on Vietnam War
+A student newspaper conducted a survey of student opinions about the Vietnam War in May 1967. Responses were classified by sex, year in the program and one of four opinions. The survey was voluntary. The data may be found in the dataset `uncviet`.  Treat the opinion as the response and the sex and year as predictors. Build a proportional odds model, giving an interpretation to the estimates.
+
+```{r}
+data(uncviet)
+?uncviet
+fit <- model <- polr(policy ~ sex + year, weights=y, data=uncviet)
+fit
+
+# students are more likely to want the US to withdraw from Vietnam if they are older and if they are female. 
+```
+
+# pneumonoconiosis of coal miners
+The pneumo data gives the number of coal miners classified by radiological examination into one of three categories of pneumonoconiosis and by the number of years spent working at the coal face divided into eight categories.
+
+```{r}
+library(faraway)
+data(pneumo,package="faraway")
+?pneumo
+```
+
+1. Treating the pneumonoconiosis status as response variable as nominal, build a model for predicting the frequency of the three outcomes in terms of length of service and use it to predict the outcome for a miner with 25 years of service.
+
+```{r}
+fit <- multinom(status ~ year, data = pneumo, Hess = TRUE)
+fit
+newdata=data.frame(year=25)
+predict(fit, newdata=newdata, type="probs")
+```
+
+2. Repeat the analysis with the pneumonoconiosis status being treated as ordinal. 
+
+```{r}
+fit <- polr(status ~ year, data = pneumo, Hess = TRUE)
+fit
+newdata=data.frame(year=25)
+predict(fit, newdata=newdata, type="probs")
+```
+
+3.Now treat the response variable as hierarchical with top level indicating whether
+the miner has the disease and the second level indicating, given they have the
+disease, whether they have a moderate or severe case. 
+
+```{r}
+
+
+```
+
+4.  Compare the three analyses.
+
+```{r}
+# the first two are the same
+```
+
+
+# (optional) Multinomial choice models: 
+
+Pardoe and Simonton (2006) fit a discrete choice model to predict winners of the Academy Awards. Their data are in the folder AcademyAwards.
+
+name  | description
+------|----------------------------------------
+No    | unique nominee identifier
+Year  | movie release year (not ceremony year)
+Comp  | identifier for year/category
+Name  | short nominee name
+PP    | best picture indicator
+DD    | best director indicator
+MM    | lead actor indicator
+FF    | lead actress indicator
+Ch    | 1 if win, 2 if lose
+Movie | short movie name
+Nom   | total oscar nominations
+Pic   | picture nom
+Dir   | director nom
+Aml   | actor male lead nom
+Afl   | actor female lead nom
+Ams   | actor male supporting nom
+Afs   | actor female supporting nom
+Scr   | screenplay nom
+Cin   | cinematography nom
+Art   | art direction nom
+Cos   | costume nom
+Sco   | score nom
+Son   | song nom
+Edi   | editing nom
+Sou   | sound mixing nom
+For   | foreign nom
+Anf   | animated feature nom
+Eff   | sound editing/visual effects nom
+Mak   | makeup nom
+Dan   | dance nom
+AD    | assistant director nom
+PrNl  | previous lead actor nominations
+PrWl  | previous lead actor wins
+PrNs  | previous supporting actor nominations
+PrWs  | previous supporting actor wins
+PrN   | total previous actor/director nominations
+PrW   | total previous actor/director wins
+Gdr   | golden globe drama win
+Gmc   | golden globe musical/comedy win
+Gd    | golden globe director win
+Gm1   | golden globe male lead actor drama win
+Gm2   | golden globe male lead actor musical/comedy win
+Gf1   | golden globe female lead actor drama win
+Gf2   | golden globe female lead actor musical/comedy win
+PGA   | producer's guild of america win
+DGA   | director's guild of america win
+SAM   | screen actor's guild male win
+SAF   | screen actor's guild female win
+PN    | PP*Nom
+PD    | PP*Dir
+DN    | DD*Nom
+DP    | DD*Pic
+DPrN  | DD*PrN
+DPrW  | DD*PrW
+MN    | MM*Nom
+MP    | MM*Pic
+MPrN  | MM*PrNl
+MPrW  | MM*PrWl
+FN    | FF*Nom
+FP    | FF*Pic
+FPrN  | FF*PrNl
+FPrW  | FF*PrWl
+
+```{r, echo=FALSE}
+
+```
+
+1. Fit your own model to these data.
+
+```{r}
+
+```
+
+2. Display the fitted model on a plot that also shows the data.
+
+```{r}
+
+```
+
+3. Make a plot displaying the uncertainty in inferences from the fitted model.
+
+```{r}
+
+```

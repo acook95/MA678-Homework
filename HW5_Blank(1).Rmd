@@ -1,0 +1,299 @@
+---
+title: "HW5Blank"
+author: "Anna Cook"
+date: "10/2/2020"
+output: pdf_document
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load("rstanarm","bayesplot","AER","VGAM","brms","ggplot2","glmx","boot","learnr","foreign","knitr","arm","ggplot2", "GGally","magrittr","dplyr","MASS","titanic","glmx")
+install.packages("countreg", repos="http://R-Forge.R-project.org")
+library(countreg)
+
+```
+
+
+## 15.1 Poisson and negative binomial regression: 
+The folder RiskyBehavior contains data from a  randomized trial targeting couples at high risk of HIV infection. The intervention provided  counseling sessions regarding practices that could reduce their likelihood of contracting HIV.  Couples were randomized either to a control group, a group in which just the woman participated,  or a group in which both members of the couple participated. One of the outcomes examined  after three months was “number of unprotected sex acts.”  
+
+### a) 
+Model this outcome as a function of treatment assignment using a Poisson regression. Does  the model fit well? Is there evidence of overdispersion?  
+
+```{r}
+risk <- read.csv("https://raw.githubusercontent.com/avehtari/ROS-Examples/master/RiskyBehavior/data/risky.csv",header=T)
+risk$fupacts_R = round(risk$fupacts)
+
+fit1 <- stan_glm(fupacts_R ~ couples + women_alone, family = poisson(link = "log"), data = risk, refresh = 0)
+
+pp_check(fit1)
+
+predicted <- predict(fit1)
+residuals <- resid(fit1)
+plot(predicted, residuals, xlab="predicted value", ylab="residual",
+     main="Residuals vs. predicted values", pch=20)
+abline(0, 0, col="gray", lwd=.5)
+
+rootogram(fit1)
+
+
+```
+#### Yes, there is evidence of overdispersion. The residuals are huge, and the posterior predictive check shows that the model is not fitting the data well. The rootogram shows that at some points the model is over-predicting and at some points it is under-predicting.
+
+To summarize:
+
+- `sex` is the sex of the person, recorded as "man" or "woman" here
+- `couples` is an indicator for if the couple was counseled together
+- `women_alone` is an indicator for if the woman went to counseling by herself
+- `bs_hiv` indicates if the individual is HIV positive
+- `bupacts` is the number of unprotected sex acts reported as a baseline (before treamtnet)
+- `fupacts` is the number of unprotected sex acts reported at the end of the study
+
+### b) 
+Next extend the model to include pre-treatment measures of the outcome and the additional  pre-treatment variables included in the dataset. Does the model fit well? Is there evidence of  overdispersion?  
+
+```{r}
+fit2 <- stan_glm(fupacts_R ~ couples + women_alone + bs_hiv + log(bupacts + 1) + sex, family = poisson(link = "log"), data = risk, refresh = 0)
+fit2
+
+pp_check(fit2)
+
+predicted <- predict(fit2)
+residuals <- resid(fit2)
+plot(predicted, residuals, xlab="predicted value", ylab="residual",
+     main="Residuals vs. predicted values", pch=20)
+abline(0, 0, col="gray", lwd=.5)
+
+rootogram(fit2)
+
+
+```
+#### The model does not fit well (based on pp_check plot) and there is evidence of overdispersion (based on residual plot being very spread out). The rootogram also shows that the model is mostly over-predicting.
+
+
+### c) 
+Fit a negative binomial (overdispersed Poisson) model. What do you conclude regarding  effectiveness of the intervention?
+
+```{r}
+fit3 <- glm.nb(fupacts_R ~ couples + women_alone + bs_hiv + log(bupacts + 1) + sex, data=risk, link="log")
+fit3
+
+#pp_check(fit3)
+
+ggplot()+
+  geom_point(aes(x=predict(fit3, type="response"), y=resid(fit3)))+
+  labs(x="predicted value", y="residual", title = "Residuals vs. predicted values")+
+  geom_abline(slope=0, intercept=0, color="gray")
+
+rootogram(fit3)
+```
+#### You can conclude that the intervention is effective, but it appears to be more effective for women alone than for couples. This is shown by the women_alone coefficient having a larger absolute value than the couples. However, both of the coefficients are negative, suggesting that either intervention reduces the number of unprotected sex acts. 
+
+
+### d) 
+These data include responses from both men and women from the participating couples.  Does this give you any concern with regard to our modeling assumptions? 
+
+#### This could be an issue because if both people in the couple are responding, this means that we are getting double the amount of information for these couples, thus doubling the response variable for these observations. This also means that not all the data points are independent of one another, but there is some collinearity going on.
+
+
+## 15.3 Binomial regression: 
+Redo the basketball shooting example on page 270, making some changes:  
+
+### (a) 
+Instead of having each player shoot 20 times, let the number of shots per player vary, drawn  from the uniform distribution between 10 and 30.  
+
+```{r}
+set.seed(100)
+N <- 100
+height <- rnorm(N, 72, 3)
+p <- 0.4 + 0.1*(height - 72)/3
+n <- round(runif(N, 10, 30), digits = 0)
+for (i in 1:n) {
+  y <- rbinom(N, i, p)
+}
+
+data <- data.frame(n=n, y=y, height=height)
+fit1 <- stan_glm(cbind(y, i-y) ~ height, family = binomial(link = "logit"), data = data, refresh = 0)
+fit1
+```
+
+### (b) 
+Instead of having the true probability of success be linear, have the true probability be a  logistic function, set so that Pr(success) = 0.3 for a player who is 5'9" and 0.4 for a 6' tall  player. 
+
+```{r}
+N <- 100
+height <- rnorm(N, 72, 3)
+p <- invlogit(-.405 + .441*((height - 72)/3))
+n <- round(runif(N, 10, 30), digits = 0)
+for (i in 1:n) {
+  y <- rbinom(N, i, p)
+}
+
+data <- data.frame(n=n, y=y, height=height)
+round(data$y, digits = 0)
+fit2 <- stan_glm(cbind(y, i-y) ~ height, family = binomial(link = "logit"), data = data, refresh = 0)
+fit2
+```
+
+## 15.7 Tobit model for mixed discrete/continuous data: 
+Experimental data from the National Supported  Work example are in the folder Lalonde. Use the treatment indicator and pre-treatment variables  to predict post-treatment (1978) earnings using a Tobit model. Interpret the model coefficients. 
+
+```{r}
+lalonde = foreign::read.dta("https://github.com/avehtari/ROS-Examples/blob/master/Lalonde/NSW_dw_obs.dta?raw=true")
+
+fit <- vglm(re78 ~ treat + age + educ + black + hisp + married + nodegree + sample + educ_cat4, tobit(), data = lalonde)
+summary(fit)
+```
+#### By looking at the signs of the coefficients, we can see that being black, hispanic, and having no degree all degrease expected post-treatment earnings. All other variables increase average expected earnings as the level of the predictor increases. For example, as a person's education level increases, their average expected earings increases as well. In addition, the only variable that is not statistically significant is hisp, although the p-value is 0.06, so it is barely above the threshold for being considered "significant", so it is hard to say whether we are seeing a true effect or not. 
+
+
+## 15.8 Robust linear regression using the t model: 
+The folder Congress has the votes for the Democratic  and Republican candidates in each U.S. congressional district in 1988, along with the parties’  vote proportions in 1986 and an indicator for whether the incumbent was running for reelection  in 1988. For your analysis, just use the elections that were contested by both parties in both  years.  
+
+```{r}
+congress = read.csv("https://raw.githubusercontent.com/avehtari/ROS-Examples/master/Congress/data/congress.csv")
+congress88 <- data.frame(vote=congress$v88_adj,pastvote=congress$v86_adj,inc=congress$inc88)
+```
+
+### (a) 
+Fit a linear regression using stan_glm with the usual normal-distribution model for the  errors predicting 1988 Democratic vote share from the other variables and assess model fit.  
+
+```{r}
+fit1 <- stan_glm(vote ~ pastvote + inc, data = congress88, refresh = 0)
+fit1
+
+pp_check(fit1)
+
+predicted <- predict(fit1)
+residuals <- resid(fit1)
+plot(predicted, residuals, xlab="predicted value", ylab="residual",
+     main="Residuals vs. predicted values", pch=20)
+abline(0, 0, col="gray", lwd=.5)
+```
+#### based on the pp_check plot and the residuals, this fit looks to be not great, but also not terrible. The pp_check plot shows that the model has the same bimodal shape as the simulations, but it seems a bit off. The residuals also show this bimodal pattern, but the residuals don't appear to be overdispersed. 
+
+
+### (b) 
+Fit the same sort of model using the brms package with a t distribution, using the brm  function with the student family. Again assess model fit.  
+
+```{r}
+fit2 <- brm(vote ~ pastvote + inc, data = congress88, family = student, refresh = 0)
+summary(fit2)
+
+pp_check(fit2)
+
+predicted <- predict(fit2)
+residuals <- resid(fit2)
+plot(predicted, residuals, xlab="predicted value", ylab="residual",
+     main="Residuals vs. predicted values", pch=20)
+abline(0, 0, col="gray", lwd=.5)
+```
+#### Although the pp_check plot still isn't a perfect fit, the residuals no longer show a clear bimodal pattern, so this fit seems to be a bit better than the previous model. 
+
+
+### (c) 
+Which model do you prefer? 
+
+#### I prefer the second model because the residuals look more evenly spread out instead of in a bimodal pattern, and the pp_check plot seems to be fitting just slightly better.
+
+## 15.9 Robust regression for binary data using the robit model: 
+Use the same data as the previous  example with the goal instead of predicting for each district whether it was won by the  Democratic or Republican candidate.  
+
+### (a) 
+Fit a standard logistic or probit regression and assess model fit.  
+
+```{r}
+congress88$winner <- ifelse(congress88$vote>0.5,1,0)
+fit1 <- glm(winner ~ pastvote + inc, family = binomial(link = "logit"), data = congress88)
+fit1
+
+fit1 <- stan_glm(winner ~ pastvote + inc, family = binomial(link = "logit"), data = congress88)
+pp_check(fit1)
+
+binnedplot(fitted(fit1),resid(fit1))
+
+# the residuals are a bit wacky but the pp_check plot appears to be fitting very well.
+```
+
+### (b) 
+Fit a robit regression and assess model fit.  
+
+```{r}
+fit2 <- glm(winner ~ pastvote + inc, family = binomial(link = gosset(2)), data = congress88)
+fit2
+
+binnedplot(fitted(fit2),resid(fit2))
+```
+
+### (c) 
+Which model do you prefer? 
+
+#### I think I prefer the standard logistic model because it has a slightly lower residual deviance and AIC values, and the pp_check plot looked like a really good fit. 
+
+
+## 15.14 Model checking for count data: 
+The folder RiskyBehavior contains data from a study of  behavior of couples at risk for HIV; see Exercise 15.1. 
+
+### (a) 
+Fit a Poisson regression predicting number of unprotected sex acts from baseline HIV  status. Perform predictive simulation to generate 1000 datasets and record the percentage of  observations that are equal to 0 and the percentage that are greater than 10 (the third quartile  in the observed data) for each. Compare these to the observed value in the original data.  
+
+```{r}
+set.seed(100)
+risky <- read.csv("https://raw.githubusercontent.com/avehtari/ROS-Examples/master/RiskyBehavior/data/risky.csv", header = TRUE)
+risky$fupacts_R <- round(risky$fupacts, digits = 0)
+fit1 <- stan_glm(fupacts_R ~ bs_hiv, family = poisson(link = "log"), data = risky, refresh = 0)
+y_rep1 <- posterior_predict(fit1)
+subset1 <- sample(y_rep1, 1000)
+p_0 <- (sum(subset1==0))/1000
+p_10 <- (sum(subset1>10))/1000
+p_0
+p_10
+```
+
+### (b) 
+Repeat (a) using a negative binomial (overdispersed Poisson) regression.  
+
+```{r}
+set.seed(100)
+fit2 <- stan_glm.nb(fupacts_R ~ bs_hiv, data=risky, link="log", refresh = 0)
+y_rep2 <- posterior_predict(fit2)
+subset2 <- sample(y_rep2, 1000)
+p_0 <- (sum(subset2==0))/1000
+p_10 <- (sum(subset2>10))/1000
+p_0
+p_10
+```
+
+###(c) 
+Repeat (b), also including ethnicity and baseline number of unprotected sex acts as inputs. 
+#### There is no ethnicity variable in this dataset?
+```{r}
+set.seed(100)
+fit3 <- stan_glm.nb(fupacts_R ~ bs_hiv + bupacts + sex, data=risky, link="log", refresh = 0)
+y_rep3 <- posterior_predict(fit3)
+subset3 <- sample(y_rep3, 1000)
+p_0 <- (sum(subset3==0))/1000
+p_10 <- (sum(subset3>10))/1000
+p_0
+p_10
+```
+
+## 15.15 Summarizing inferences and predictions using simulation: 
+Exercise 15.7 used a Tobit model to  fit a regression with an outcome that had mixed discrete and continuous data. In this exercise  you will revisit these data and build a two-step model: 
+(1) logistic regression for zero earnings  versus positive earnings, and 
+(2) linear regression for level of earnings given earnings are positive. 
+
+Compare predictions that result from each of these models with each other. 
+
+```{r}
+# (1)
+lalonde$earn <- ifelse(lalonde$re78==0,0,1)
+fit1 <- stan_glm((re78 > 0) ~ treat + age + educ + black + hisp + married + nodegree + sample + educ_cat4, family = binomial(link = "logit"), data = lalonde, refresh = 0)
+fit1
+
+# (2)
+fit2 <- stan_glm(re78 ~ treat + age + educ + black + hisp + married + nodegree + sample + educ_cat4, data = lalonde, subset = re78>0, refresh = 0)
+fit2
+```
+#### The first model predicts the likelihood that a person will have positive earnings, based on the level of the various predictors. The second model predicts what those earnings will be, given that the earnings are positive. For both models, the positive coefficients indicate a predicted increase in likelihood/earnings as the level of the predictor increases, and the negative coefficients indicate a predicted decrease in likelihood/earnings as the level of the predictor increases.
